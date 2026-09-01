@@ -1,3 +1,5 @@
+import { CalendarApp } from "@/components/CalendarApp";
+
 export default function Home() {
-  return <main>Team Horizon</main>;
+  return <CalendarApp />;
 }
