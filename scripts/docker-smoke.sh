@@ -20,13 +20,13 @@ trap cleanup EXIT INT TERM
 
 docker build -t "$smoke_image" .
 docker volume create "$smoke_volume" >/dev/null
-docker run -d --name "$smoke_container" -p 127.0.0.1::3000 \
+docker run -d --name "$smoke_container" -p 127.0.0.1::3009 \
   -e ADMIN_PIN=smoke-admin-pin \
   -e SESSION_SECRET=smoke-session-secret-at-least-32-characters \
   -e AGENT_API_TOKEN=smoke-agent-token \
   -v "$smoke_volume:/app/data" "$smoke_image" >/dev/null
 
-smoke_port="$(docker port "$smoke_container" 3000/tcp | sed -n 's/.*://p')"
+smoke_port="$(docker port "$smoke_container" 3009/tcp | sed -n 's/.*://p')"
 test -n "$smoke_port"
 
 attempt=0
@@ -39,11 +39,11 @@ test "$response" = '{"ok":true}'
 
 docker stop "$smoke_container" >/dev/null
 docker rm "$smoke_container" >/dev/null
-docker run -d --name "$smoke_container" -p 127.0.0.1::3000 \
+docker run -d --name "$smoke_container" -p 127.0.0.1::3009 \
   -e ADMIN_PIN=smoke-admin-pin \
   -e SESSION_SECRET=smoke-session-secret-at-least-32-characters \
   -v "$smoke_volume:/app/data" "$smoke_image" >/dev/null
-smoke_port="$(docker port "$smoke_container" 3000/tcp | sed -n 's/.*://p')"
+smoke_port="$(docker port "$smoke_container" 3009/tcp | sed -n 's/.*://p')"
 attempt=0
 until response="$(curl -fsS "http://127.0.0.1:${smoke_port}/api/health" 2>/dev/null)"; do
   attempt=$((attempt + 1))
