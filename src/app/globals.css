@@ -1,0 +1,8 @@
+:root {
+  color: #18202a;
+  background: #f5f8fc;
+  font-family: Arial, sans-serif;
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; }
