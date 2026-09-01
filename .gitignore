@@ -2,7 +2,8 @@
 node_modules/
 .next/
 data/
-.env
+.env*
+!.env.example
 .DS_Store
 coverage/
 tsconfig.tsbuildinfo
