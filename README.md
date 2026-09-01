@@ -27,7 +27,7 @@ The local database is created at `data/team-calendar.db` unless `DATABASE_PATH` 
 
 ## Deploy with Coolify
 
-Create a new application from this repository and choose the included `Dockerfile`.
+Create a new application from this repository and select **Dockerfile** as the Build Pack. Coolify defaults to Nixpacks, so change this field explicitly; the included Dockerfile uses the required Node 22 runtime and native SQLite build tools.
 
 - Exposed port: `3000`
 - Health check path: `/api/health`
@@ -35,6 +35,8 @@ Create a new application from this repository and choose the included `Dockerfil
 - Required environment values: `ADMIN_PIN`, `SESSION_SECRET`
 - Optional environment value: `AGENT_API_TOKEN`
 - Database path: the image already sets `DATABASE_PATH=/app/data/team-calendar.db`
+
+The repository also contains a defensive `nixpacks.toml` pinned to Node 22. Dockerfile remains the recommended build method because it gives this SQLite application a predictable build and runtime image.
 
 Use a long random value for `SESSION_SECRET`. The pilot deliberately does not verify member emails; it is intended for a trusted internal team. Add proper email-link sign-in before exposing it beyond that group.
 
