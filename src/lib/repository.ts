@@ -174,5 +174,11 @@ export function deleteOwnedEntry(db: Sqlite, memberId: number, entryId: number):
 
 export function archiveReference(db: Sqlite, type: "member" | "project" | "venture", id: number): boolean {
   const table = type === "member" ? "members" : type === "project" ? "projects" : "ventures";
-  return db.prepare(`UPDATE ${table} SET active=0, updated_at=CURRENT_TIMESTAMP WHERE id=?`).run(id).changes > 0;
+  return db.transaction(() => {
+    const changed = db.prepare(`UPDATE ${table} SET active=0, updated_at=CURRENT_TIMESTAMP WHERE id=?`).run(id).changes > 0;
+    if (changed && type === "venture") {
+      db.prepare("UPDATE projects SET active=0, updated_at=CURRENT_TIMESTAMP WHERE venture_id=?").run(id);
+    }
+    return changed;
+  })();
 }

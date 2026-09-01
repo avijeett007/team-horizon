@@ -2,12 +2,14 @@ import Database from "better-sqlite3";
 import { beforeEach, describe, expect, it } from "vitest";
 import { migrate } from "./db";
 import {
+  archiveReference,
   createEntries,
   createMember,
   createProject,
   createVenture,
   deleteOwnedEntry,
   findMemberByEmail,
+  listBootstrap,
   listEntries,
   updateOwnedEntry,
 } from "./repository";
@@ -52,5 +54,10 @@ describe("calendar repository", () => {
     expect(deleteOwnedEntry(db, memberId + 1, created.id)).toBe(false);
     expect(updateOwnedEntry(db, memberId, created.id, { note: "Changed" }).note).toBe("Changed");
     expect(deleteOwnedEntry(db, memberId, created.id)).toBe(true);
+  });
+
+  it("archives a venture's projects with the venture", () => {
+    expect(archiveReference(db, "venture", knotieId)).toBe(true);
+    expect(listBootstrap(db).projects).toEqual([]);
   });
 });
