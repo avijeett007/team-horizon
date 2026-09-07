@@ -42,7 +42,12 @@ export function EntryEditor({ date, projects, timezone, weeklyStatus, onClose, o
     : null;
 
   async function submit(event: FormEvent) {
-    event.preventDefault(); setBusy(true); setError("");
+    event.preventDefault(); setError("");
+    if (ranges.some((range) => !/^([01]\d|2[0-3]):[0-5]\d$/.test(range.startTime) || !/^([01]\d|2[0-3]):[0-5]\d$/.test(range.endTime))) {
+      setError("Enter a valid start and end time for every range");
+      return;
+    }
+    setBusy(true);
     for (const range of ranges) {
       const response = await fetch("/api/entries", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({
         date, ...range, timezone, status, projectId: projectId ? Number(projectId) : null, note: note || null,
@@ -60,7 +65,7 @@ export function EntryEditor({ date, projects, timezone, weeklyStatus, onClose, o
         <header><div><p className="eyebrow">Your declaration</p><h2 id="entry-title">Add time for {new Date(`${date}T12:00:00`).toLocaleDateString([], { weekday: "long", day: "numeric", month: "long" })}</h2></div><button className="icon-button" onClick={onClose} aria-label="Close">×</button></header>
         <form onSubmit={submit}>
           <fieldset className="segment-control"><legend>What kind of time is this?</legend>{[["available","Available"],["tentative","Tentative"],["busy","Project / busy"],["leave","Leave"]].map(([value,label]) => <label key={value} className={status === value ? "selected" : ""}><input type="radio" name="status" value={value} checked={status===value} onChange={() => setStatus(value)} />{label}</label>)}</fieldset>
-          <div className="time-ranges">{ranges.map((range, index) => <div className="time-row" key={index}><label>Start time<input type="time" value={range.startTime} onChange={(e) => setRanges((all) => all.map((item,i) => i===index ? {...item,startTime:e.target.value}:item))} /></label><span>to</span><label>End time<input type="time" value={range.endTime} onChange={(e) => setRanges((all) => all.map((item,i) => i===index ? {...item,endTime:e.target.value}:item))} /></label>{ranges.length>1 && <button type="button" className="remove-range" onClick={() => setRanges((all)=>all.filter((_,i)=>i!==index))} aria-label={`Remove time ${index+1}`}>×</button>}</div>)}</div>
+          <div className="time-ranges">{ranges.map((range, index) => <div className="time-row" key={index}><label>Start time<input type="time" required value={range.startTime} onChange={(e) => setRanges((all) => all.map((item,i) => i===index ? {...item,startTime:e.target.value}:item))} /></label><span>to</span><label>End time<input type="time" required value={range.endTime} onChange={(e) => setRanges((all) => all.map((item,i) => i===index ? {...item,endTime:e.target.value}:item))} /></label>{ranges.length>1 && <button type="button" className="remove-range" onClick={() => setRanges((all)=>all.filter((_,i)=>i!==index))} aria-label={`Remove time ${index+1}`}>×</button>}</div>)}</div>
           <button type="button" className="add-time" onClick={() => setRanges((all) => [...all, { startTime: "", endTime: "" }])}>＋ Add another time</button>
           {status === "available" && remainingAfter != null
             ? <p className="weekly-preview">Adds about {addedHours} hours · about {remainingAfter} hours remaining after saving.</p>

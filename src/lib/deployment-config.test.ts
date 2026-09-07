@@ -46,6 +46,9 @@ describe("deployment configuration", () => {
     expect(nginx).toContain("proxy_pass http://127.0.0.1:3009;");
     expect(nginx).toContain("proxy_set_header X-Forwarded-Proto $scheme;");
     expect(smokeScript).toContain("3009/tcp");
+    expect(smokeScript).toContain("DATABASE_URL");
+    expect(smokeScript).not.toContain("docker volume");
+    expect(smokeScript).not.toContain("/app/data");
     expect(fs.readFileSync(path.join(root, "nixpacks.toml"), "utf8")).toContain('PORT = "3009"');
   });
 });

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { EmailGate } from "./EmailGate";
 import { EntryEditor } from "./EntryEditor";
 import { SummaryCards } from "./SummaryCards";
@@ -15,6 +15,10 @@ const weeklyStatus = {
 };
 
 describe("member interface", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
   it("explains trusted email recognition without tracking language", () => {
     render(<EmailGate onRecognised={vi.fn()} hasMembers />);
     expect(screen.getByRole("heading", { name: /when can we work together/i })).toBeInTheDocument();
@@ -54,5 +58,17 @@ describe("member interface", () => {
     render(<EntryEditor date="2026-09-07" projects={[]} timezone="Europe/London" weeklyStatus={null} onClose={vi.fn()} onSaved={vi.fn()} />);
     expect(screen.getByRole("dialog")).toBeInTheDocument();
     expect(screen.getByText(/weekly total will refresh after saving/i)).toBeInTheDocument();
+  });
+
+  it("does not partially save when a split range is incomplete", async () => {
+    const fetchSpy = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ entries: [] }) });
+    vi.stubGlobal("fetch", fetchSpy);
+    render(<EntryEditor date="2026-09-07" projects={[]} timezone="Europe/London" weeklyStatus={weeklyStatus} onClose={vi.fn()} onSaved={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /add another time/i }));
+    fireEvent.submit(screen.getByRole("dialog").querySelector("form")!);
+
+    await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent(/every range/i));
+    expect(fetchSpy).not.toHaveBeenCalled();
   });
 });

@@ -105,4 +105,5 @@ Monthly reports include weeks whose Monday falls in the selected month. The agen
 - `npm test`
 - `npm run typecheck`
 - `npm run build`
-- `sh scripts/docker-smoke.sh` when Docker is available
+- `npm run test:e2e:postgres` (uses the ignored `.env.local` and a disposable PostgreSQL schema)
+- `DATABASE_URL=postgresql://... sh scripts/docker-smoke.sh` when Docker is available
