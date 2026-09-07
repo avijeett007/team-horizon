@@ -152,7 +152,7 @@ export function CalendarApp() {
         <section id="common" className="common-section"><div className="common-copy"><p className="eyebrow">Plan the next conversation</p><h2>Stop doing time-zone maths.</h2><p>Choose the people you need and Team Horizon will find where their declared availability overlaps. Empty calendars are never treated as free time.</p><div className="zone-clocks"><span><small>London</small><strong>{new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/London", hour: "2-digit", minute: "2-digit" }).format(new Date())}</strong></span><i>↔</i><span><small>Kolkata</small><strong>{new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit" }).format(new Date())}</strong></span></div></div><CommonTime key={projectId} projectId={Number(projectId)} members={bootstrap.members} weekStart={weekStart} zone={zone} /></section>
         <footer className="site-footer"><span>Team Horizon · voluntary availability for Knotie and Hexai</span><span>No activity monitoring. No attendance scoring.</span></footer>
       </div>
-      {editorDate && weeklyStatus && <EntryEditor date={editorDate} projects={bootstrap.selectableProjects} timezone={bootstrap.sessionMember.timezone} weeklyStatus={weeklyStatus} onClose={() => setEditorDate(null)} onSaved={() => { setEditorDate(null); refreshCalendar(); }} />}
+      {editorDate && <EntryEditor date={editorDate} projects={bootstrap.selectableProjects} timezone={bootstrap.sessionMember.timezone} weeklyStatus={weeklyStatus} onClose={() => setEditorDate(null)} onSaved={() => { setEditorDate(null); refreshCalendar(); }} />}
     </main>
   );
 }

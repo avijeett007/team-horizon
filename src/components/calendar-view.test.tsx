@@ -49,4 +49,10 @@ describe("member interface", () => {
     fireEvent.click(screen.getByLabelText("Tentative"));
     expect(screen.getByText(/does not count toward weekly available hours/i)).toBeInTheDocument();
   });
+
+  it("opens the time editor when weekly status is unavailable", () => {
+    render(<EntryEditor date="2026-09-07" projects={[]} timezone="Europe/London" weeklyStatus={null} onClose={vi.fn()} onSaved={vi.fn()} />);
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    expect(screen.getByText(/weekly total will refresh after saving/i)).toBeInTheDocument();
+  });
 });

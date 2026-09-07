@@ -6,7 +6,7 @@ import type { WeeklyStatus } from "@/lib/weekly-ledger";
 
 type Range = { startTime: string; endTime: string };
 
-export function EntryEditor({ date, projects, timezone, weeklyStatus, onClose, onSaved }: { date: string; projects: Project[]; timezone: string; weeklyStatus: WeeklyStatus; onClose: () => void; onSaved: () => void }) {
+export function EntryEditor({ date, projects, timezone, weeklyStatus, onClose, onSaved }: { date: string; projects: Project[]; timezone: string; weeklyStatus?: WeeklyStatus | null; onClose: () => void; onSaved: () => void }) {
   const [ranges, setRanges] = useState<Range[]>([{ startTime: "09:00", endTime: "17:00" }]);
   const [status, setStatus] = useState("available");
   const [projectId, setProjectId] = useState("");
@@ -37,7 +37,9 @@ export function EntryEditor({ date, projects, timezone, weeklyStatus, onClose, o
     return minutes + (active ? active[1] - active[0] : 0);
   })();
   const addedHours = Math.round((declaredMinutes / 60) * 100) / 100;
-  const remainingAfter = Math.max(0, Math.round((weeklyStatus.remainingHours - addedHours) * 100) / 100);
+  const remainingAfter = weeklyStatus
+    ? Math.max(0, Math.round((weeklyStatus.remainingHours - addedHours) * 100) / 100)
+    : null;
 
   async function submit(event: FormEvent) {
     event.preventDefault(); setBusy(true); setError("");
@@ -60,8 +62,10 @@ export function EntryEditor({ date, projects, timezone, weeklyStatus, onClose, o
           <fieldset className="segment-control"><legend>What kind of time is this?</legend>{[["available","Available"],["tentative","Tentative"],["busy","Project / busy"],["leave","Leave"]].map(([value,label]) => <label key={value} className={status === value ? "selected" : ""}><input type="radio" name="status" value={value} checked={status===value} onChange={() => setStatus(value)} />{label}</label>)}</fieldset>
           <div className="time-ranges">{ranges.map((range, index) => <div className="time-row" key={index}><label>Start time<input type="time" value={range.startTime} onChange={(e) => setRanges((all) => all.map((item,i) => i===index ? {...item,startTime:e.target.value}:item))} /></label><span>to</span><label>End time<input type="time" value={range.endTime} onChange={(e) => setRanges((all) => all.map((item,i) => i===index ? {...item,endTime:e.target.value}:item))} /></label>{ranges.length>1 && <button type="button" className="remove-range" onClick={() => setRanges((all)=>all.filter((_,i)=>i!==index))} aria-label={`Remove time ${index+1}`}>×</button>}</div>)}</div>
           <button type="button" className="add-time" onClick={() => setRanges((all) => [...all, { startTime: "", endTime: "" }])}>＋ Add another time</button>
-          {status === "available"
+          {status === "available" && remainingAfter != null
             ? <p className="weekly-preview">Adds about {addedHours} hours · about {remainingAfter} hours remaining after saving.</p>
+            : status === "available"
+              ? <p className="weekly-preview neutral">Your weekly total will refresh after saving.</p>
             : <p className="weekly-preview neutral">This declaration does not count toward weekly available hours.</p>}
           <div className="form-grid">
             <label>Project<select value={projectId} onChange={(e)=>setProjectId(e.target.value)}><option value="">No project</option>{projects.map((project)=><option key={project.id} value={project.id}>{project.name}</option>)}</select></label>
