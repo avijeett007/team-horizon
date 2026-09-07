@@ -2,10 +2,11 @@
 
 import { FormEvent, useState } from "react";
 import type { Project } from "@/lib/domain";
+import type { WeeklyStatus } from "@/lib/weekly-ledger";
 
 type Range = { startTime: string; endTime: string };
 
-export function EntryEditor({ date, projects, timezone, onClose, onSaved }: { date: string; projects: Project[]; timezone: string; onClose: () => void; onSaved: () => void }) {
+export function EntryEditor({ date, projects, timezone, weeklyStatus, onClose, onSaved }: { date: string; projects: Project[]; timezone: string; weeklyStatus: WeeklyStatus; onClose: () => void; onSaved: () => void }) {
   const [ranges, setRanges] = useState<Range[]>([{ startTime: "09:00", endTime: "17:00" }]);
   const [status, setStatus] = useState("available");
   const [projectId, setProjectId] = useState("");
@@ -15,6 +16,28 @@ export function EntryEditor({ date, projects, timezone, onClose, onSaved }: { da
   const [leaveCertainty, setLeaveCertainty] = useState("confirmed");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+
+  const declaredMinutes = (() => {
+    const intervals = ranges.map(({ startTime, endTime }) => {
+      const [startHour, startMinute] = startTime.split(":").map(Number);
+      const [endHour, endMinute] = endTime.split(":").map(Number);
+      const start = startHour * 60 + startMinute;
+      let end = endHour * 60 + endMinute;
+      if (!Number.isFinite(start) || !Number.isFinite(end)) return null;
+      if (end <= start) end += 24 * 60;
+      return [start, end] as const;
+    }).filter((range): range is readonly [number, number] => range !== null).sort((a, b) => a[0] - b[0]);
+    let minutes = 0;
+    let active: [number, number] | null = null;
+    for (const [start, end] of intervals) {
+      if (!active) active = [start, end];
+      else if (start <= active[1]) active[1] = Math.max(active[1], end);
+      else { minutes += active[1] - active[0]; active = [start, end]; }
+    }
+    return minutes + (active ? active[1] - active[0] : 0);
+  })();
+  const addedHours = Math.round((declaredMinutes / 60) * 100) / 100;
+  const remainingAfter = Math.max(0, Math.round((weeklyStatus.remainingHours - addedHours) * 100) / 100);
 
   async function submit(event: FormEvent) {
     event.preventDefault(); setBusy(true); setError("");
@@ -37,6 +60,9 @@ export function EntryEditor({ date, projects, timezone, onClose, onSaved }: { da
           <fieldset className="segment-control"><legend>What kind of time is this?</legend>{[["available","Available"],["tentative","Tentative"],["busy","Project / busy"],["leave","Leave"]].map(([value,label]) => <label key={value} className={status === value ? "selected" : ""}><input type="radio" name="status" value={value} checked={status===value} onChange={() => setStatus(value)} />{label}</label>)}</fieldset>
           <div className="time-ranges">{ranges.map((range, index) => <div className="time-row" key={index}><label>Start time<input type="time" value={range.startTime} onChange={(e) => setRanges((all) => all.map((item,i) => i===index ? {...item,startTime:e.target.value}:item))} /></label><span>to</span><label>End time<input type="time" value={range.endTime} onChange={(e) => setRanges((all) => all.map((item,i) => i===index ? {...item,endTime:e.target.value}:item))} /></label>{ranges.length>1 && <button type="button" className="remove-range" onClick={() => setRanges((all)=>all.filter((_,i)=>i!==index))} aria-label={`Remove time ${index+1}`}>×</button>}</div>)}</div>
           <button type="button" className="add-time" onClick={() => setRanges((all) => [...all, { startTime: "", endTime: "" }])}>＋ Add another time</button>
+          {status === "available"
+            ? <p className="weekly-preview">Adds about {addedHours} hours · about {remainingAfter} hours remaining after saving.</p>
+            : <p className="weekly-preview neutral">This declaration does not count toward weekly available hours.</p>}
           <div className="form-grid">
             <label>Project<select value={projectId} onChange={(e)=>setProjectId(e.target.value)}><option value="">No project</option>{projects.map((project)=><option key={project.id} value={project.id}>{project.name}</option>)}</select></label>
             <label>Repeat<select value={repeat} onChange={(e)=>setRepeat(e.target.value)}><option value="none">Does not repeat</option><option value="weekdays">Every weekday</option><option value="weekly">Weekly</option></select></label>

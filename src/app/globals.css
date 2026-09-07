@@ -125,7 +125,15 @@ a { color: inherit; }
 
 .calendar-section { scroll-margin-top: 90px; margin-bottom: 60px; }
 .calendar-title { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 18px; }
+.calendar-actions { display: flex; align-items: flex-end; gap: 12px; }
 .week-controls { display: flex; align-items: center; gap: 7px; }
+.weekly-progress { position: relative; display: grid; min-width: 230px; padding: 9px 12px 8px; overflow: hidden; border: 1px solid #c9d9ed; border-radius: 11px; background: #f8fbff; }
+.weekly-progress > span { position: absolute; inset: auto 0 0; height: 3px; background: #d9e5f5; }
+.weekly-progress > span i { display: block; height: 100%; background: #466cff; transition: width .2s ease; }
+.weekly-progress.is-complete > span i { background: var(--leaf); }
+.weekly-progress strong { color: var(--midnight); font-size: 11px; }
+.weekly-progress small { margin-top: 3px; color: var(--muted); font-size: 9px; }
+.weekly-progress.is-not-started { background: var(--mist); }
 .icon-button { display: grid; place-items: center; width: 39px; height: 39px; border: 1px solid var(--line); border-radius: 10px; background: white; cursor: pointer; font-size: 18px; }
 .filter-bar { display: flex; gap: 8px; padding: 10px; overflow-x: auto; border: 1px solid var(--line); border-bottom: 0; border-radius: 14px 14px 0 0; background: white; }
 .filter-bar label { display: flex; flex-direction: column; gap: 2px; color: var(--muted); font: 600 8px var(--mono); text-transform: uppercase; letter-spacing: .06em; }
@@ -199,6 +207,8 @@ a { color: inherit; }
 .time-row > span { padding-bottom: 13px; color: var(--muted); font-size: 10px; }
 .remove-range { width: 30px; height: 42px; border: 0; background: transparent; color: #a4473d; font-size: 19px; cursor: pointer; }
 .add-time { margin: 10px 0 18px; border: 0; background: transparent; color: #315f98; font-size: 11px; font-weight: 750; cursor: pointer; }
+.weekly-preview { margin: -7px 0 18px; padding: 9px 11px; border-left: 3px solid #466cff; border-radius: 0 8px 8px 0; background: #f0f6ff; color: #355579; font-size: 11px; }
+.weekly-preview.neutral { border-left-color: #a6afbc; background: #f5f6f8; color: var(--muted); }
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 14px; }
 .entry-sheet footer { display: flex; justify-content: space-between; align-items: center; gap: 15px; margin-top: 22px; padding-top: 16px; border-top: 1px solid var(--line); }
 .entry-sheet footer > div { display: flex; gap: 8px; }
@@ -268,6 +278,8 @@ a { color: inherit; }
   .summary-grid { grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 40px; }
   .summary-card { min-height: 150px; padding: 15px; }
   .calendar-title { align-items: flex-start; gap: 12px; }
+  .calendar-actions { align-items: flex-end; flex-direction: column-reverse; }
+  .weekly-progress { min-width: 205px; }
   .calendar-title h2 { font-size: 23px; }
   .filter-bar { border-radius: 12px 12px 0 0; }
   .common-section { margin-left: -12px; margin-right: -12px; padding: 38px 20px; border-radius: 0; }

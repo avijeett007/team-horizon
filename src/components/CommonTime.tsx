@@ -4,7 +4,7 @@ import { useState } from "react";
 import type { Member } from "@/lib/domain";
 import type { CommonSlot } from "@/lib/common-time";
 
-export function CommonTime({ members, weekStart, zone }: { members: Member[]; weekStart: string; zone: string }) {
+export function CommonTime({ projectId, members, weekStart, zone }: { projectId: number; members: Member[]; weekStart: string; zone: string }) {
   const [selected, setSelected] = useState<number[]>(members.slice(0,2).map((member)=>member.id));
   const [duration, setDuration] = useState(30);
   const [slots, setSlots] = useState<CommonSlot[]>([]);
@@ -13,7 +13,7 @@ export function CommonTime({ members, weekStart, zone }: { members: Member[]; we
     setMessage("Looking across declarations…"); setSlots([]);
     const from = new Date(`${weekStart}T00:00:00Z`);
     const to = new Date(from); to.setUTCDate(to.getUTCDate()+7);
-    const response = await fetch("/api/common-time",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({memberIds:selected,fromUtc:from.toISOString(),toUtc:to.toISOString(),minimumMinutes:duration})});
+    const response = await fetch("/api/common-time",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({projectId,memberIds:selected,fromUtc:from.toISOString(),toUtc:to.toISOString(),minimumMinutes:duration})});
     const data=await response.json();
     if(!response.ok)setMessage(data.error);else{setSlots(data.slots);setMessage(data.slots.length?"":"No shared window is declared in this week.");}
   }

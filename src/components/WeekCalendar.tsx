@@ -23,8 +23,8 @@ export function WeekCalendar({ weekStart, members, entries, projects, zone, owne
             return <div className={`day-cell ${day===today?"today":""}`} key={day} onDoubleClick={()=>member.id===ownerId&&onAdd(day)}>
               {cellEntries.map((entry)=>{
                 const project=projects.find((item)=>item.id===entry.projectId);
-                const color=entry.status==="leave"?"#667085":project?.colour ?? (entry.status==="available"?"#4E9C81":"#E6A24A");
-                return <div className={`entry-pill ${entry.status}`} key={entry.id} style={{"--entry-colour":color} as React.CSSProperties}><span className="entry-time">{displayTime(entry.startsAtUtc,zone)}–{displayTime(entry.endsAtUtc,zone)}</span><strong>{entry.status==="busy"?(project?.name??"Busy"):entry.status==="leave"?`${entry.leaveCertainty==="provisional"?"Possible ":""}Leave`:entry.status.charAt(0).toUpperCase()+entry.status.slice(1)}</strong>{entry.note&&<small>{entry.note}</small>}{entry.memberId===ownerId&&<button onClick={()=>onDelete(entry.id)} aria-label={`Remove ${entry.status} entry`}>×</button>}</div>;
+                const color=entry.status==="leave"?"#667085":entry.projectColour ?? project?.colour ?? (entry.status==="available"?"#4E9C81":"#E6A24A");
+                return <div className={`entry-pill ${entry.status}`} key={entry.id} style={{"--entry-colour":color} as React.CSSProperties}><span className="entry-time">{displayTime(entry.startsAtUtc,zone)}–{displayTime(entry.endsAtUtc,zone)}</span><strong>{entry.status==="busy"?(entry.projectName??project?.name??"Busy"):entry.status==="leave"?`${entry.leaveCertainty==="provisional"?"Possible ":""}Leave`:entry.status.charAt(0).toUpperCase()+entry.status.slice(1)}</strong>{entry.note&&<small>{entry.note}</small>}{entry.memberId===ownerId&&<button onClick={()=>onDelete(entry.id)} aria-label={`Remove ${entry.status} entry`}>×</button>}</div>;
               })}
               {member.id===ownerId&&<button className="cell-add" onClick={()=>onAdd(day)} aria-label={`Add time on ${day}`}>＋</button>}
             </div>;
