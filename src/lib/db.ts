@@ -1,40 +1,82 @@
-import Database from "better-sqlite3";
-import fs from "node:fs";
-import path from "node:path";
 import { DateTime } from "luxon";
-import { SCHEMA_SQL } from "./schema";
+import { Pool, type PoolClient, type QueryResult, type QueryResultRow } from "pg";
+import { POSTGRES_REQUIREMENT_MIGRATION_SQL, POSTGRES_SCHEMA_SQL } from "./schema";
 
-type Sqlite = Database.Database;
+export interface DbQueryable {
+  query<Row extends QueryResultRow = QueryResultRow>(
+    text: string,
+    values?: readonly unknown[],
+  ): Promise<QueryResult<Row>>;
+}
+
+export interface DbPool extends DbQueryable {
+  connect(): Promise<PoolClient>;
+  end(): Promise<void>;
+}
 
 declare global {
-  var __teamCalendarDb: Sqlite | undefined;
+  var __teamHorizonDb: Pool | undefined;
+  var __teamHorizonDbReady: Promise<void> | undefined;
 }
 
-export function migrate(db: Sqlite): void {
-  db.pragma("foreign_keys = ON");
-  db.exec(SCHEMA_SQL);
-  db.prepare("INSERT OR IGNORE INTO schema_migrations(version) VALUES (1)").run();
-  const hasVersionTwo = Boolean(db.prepare("SELECT 1 FROM schema_migrations WHERE version=2").get());
-  if (!hasVersionTwo) {
-    const columns = db.pragma("table_info(members)") as Array<{ name: string }>;
-    if (!columns.some((column) => column.name === "weekly_requirement_start")) {
-      db.exec("ALTER TABLE members ADD COLUMN weekly_requirement_start TEXT");
-    }
-    const today = DateTime.utc().startOf("day");
-    const nextMonday = today.plus({ days: 8 - today.weekday }).toISODate();
-    db.prepare("UPDATE members SET weekly_requirement_start=? WHERE weekly_requirement_start IS NULL").run(nextMonday);
-    db.prepare("INSERT INTO schema_migrations(version) VALUES (2)").run();
+const SCHEMA_PATTERN = /^[a-z_][a-z0-9_]*$/;
+
+export function databaseSchema(value = process.env.DATABASE_SCHEMA ?? "team_horizon"): string {
+  if (!SCHEMA_PATTERN.test(value)) {
+    throw new Error("DATABASE_SCHEMA must contain only lowercase letters, numbers, and underscores");
   }
+  return value;
 }
 
-export function getDb(): Sqlite {
-  if (globalThis.__teamCalendarDb) return globalThis.__teamCalendarDb;
+export async function migrate(db: DbQueryable): Promise<void> {
+  await db.query(POSTGRES_SCHEMA_SQL);
+  await db.query(
+    "INSERT INTO schema_migrations(version) VALUES (1) ON CONFLICT (version) DO NOTHING",
+  );
+  await db.query(POSTGRES_REQUIREMENT_MIGRATION_SQL);
 
-  const databasePath = process.env.DATABASE_PATH ?? "./data/team-calendar.db";
-  fs.mkdirSync(path.dirname(databasePath), { recursive: true });
-  const db = new Database(databasePath);
-  db.pragma("journal_mode = WAL");
-  migrate(db);
-  globalThis.__teamCalendarDb = db;
-  return db;
+  const today = DateTime.utc().startOf("day");
+  const nextMonday = today.plus({ days: 8 - today.weekday }).toISODate();
+  await db.query(
+    "UPDATE members SET weekly_requirement_start = $1 WHERE weekly_requirement_start IS NULL",
+    [nextMonday],
+  );
+  await db.query(
+    "INSERT INTO schema_migrations(version) VALUES (2) ON CONFLICT (version) DO NOTHING",
+  );
+}
+
+async function initializeDatabase(pool: Pool, connectionString: string, schema: string): Promise<void> {
+  const bootstrap = new Pool({ connectionString });
+  try {
+    await bootstrap.query(`CREATE SCHEMA IF NOT EXISTS "${schema}"`);
+  } finally {
+    await bootstrap.end();
+  }
+  await migrate(pool);
+}
+
+export async function getDb(): Promise<DbPool> {
+  const connectionString = process.env.DATABASE_URL;
+  if (!connectionString) throw new Error("DATABASE_URL is required");
+
+  if (!globalThis.__teamHorizonDb) {
+    const schema = databaseSchema();
+    const pool = new Pool({
+      connectionString,
+      options: `-c search_path=${schema}`,
+    });
+    globalThis.__teamHorizonDb = pool;
+    globalThis.__teamHorizonDbReady = initializeDatabase(pool, connectionString, schema).catch(
+      async (error) => {
+        globalThis.__teamHorizonDb = undefined;
+        globalThis.__teamHorizonDbReady = undefined;
+        await pool.end().catch(() => undefined);
+        throw error;
+      },
+    );
+  }
+
+  await globalThis.__teamHorizonDbReady;
+  return globalThis.__teamHorizonDb;
 }
