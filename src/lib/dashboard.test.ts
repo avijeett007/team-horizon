@@ -4,9 +4,9 @@ import { buildDashboard } from "./dashboard";
 import type { DisplayEntry } from "./repository";
 
 const members: Member[] = [
-  { id: 1, name: "Asha", email: "asha@example.com", location: "Bengaluru", timezone: "Asia/Kolkata", active: true, ventureIds: [], projectIds: [] },
-  { id: 2, name: "Tom", email: "tom@example.com", location: "London", timezone: "Europe/London", active: true, ventureIds: [], projectIds: [] },
-  { id: 3, name: "Archived", email: "old@example.com", location: "London", timezone: "Europe/London", active: false, ventureIds: [], projectIds: [] },
+  { id: 1, name: "Asha", email: "asha@example.com", location: "Bengaluru", timezone: "Asia/Kolkata", weeklyRequirementStart: "2026-09-07", active: true, ventureIds: [], projectIds: [] },
+  { id: 2, name: "Tom", email: "tom@example.com", location: "London", timezone: "Europe/London", weeklyRequirementStart: "2026-09-07", active: true, ventureIds: [], projectIds: [] },
+  { id: 3, name: "Archived", email: "old@example.com", location: "London", timezone: "Europe/London", weeklyRequirementStart: "2026-09-07", active: false, ventureIds: [], projectIds: [] },
 ];
 
 const entry = (memberId: number, status: DisplayEntry["status"], start: string, end: string): DisplayEntry => ({

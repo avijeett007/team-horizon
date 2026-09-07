@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { assertWritableProject, isProjectAccessError } from "@/lib/api-policy";
 import { getDb } from "@/lib/db";
 import { deleteOwnedEntry, updateOwnedEntry } from "@/lib/repository";
 import { currentMemberId } from "@/lib/server-access";
@@ -17,8 +18,10 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   if (!memberId) return NextResponse.json({ error: "Member access is required" }, { status: 401 });
   try {
     const { id } = await params;
-    return NextResponse.json({ entry: updateOwnedEntry(getDb(), memberId, Number(id), patchSchema.parse(await request.json())) });
-  } catch (error) { return NextResponse.json({ error: errorMessage(error) }, { status: 400 }); }
+    const patch = patchSchema.parse(await request.json());
+    if ("projectId" in patch) assertWritableProject(getDb(), memberId, patch.projectId ?? null);
+    return NextResponse.json({ entry: updateOwnedEntry(getDb(), memberId, Number(id), patch) });
+  } catch (error) { return NextResponse.json({ error: errorMessage(error) }, { status: isProjectAccessError(error) ? 403 : 400 }); }
 }
 
 export async function DELETE(_: Request, { params }: { params: Promise<{ id: string }> }) {

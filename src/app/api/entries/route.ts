@@ -1,18 +1,24 @@
 import { NextResponse } from "next/server";
+import { assertWritableProject, isProjectAccessError, requireProjectId } from "@/lib/api-policy";
 import { getDb } from "@/lib/db";
-import { createEntries, listEntries } from "@/lib/repository";
+import { assertMemberCanUseProject, scopedEntries } from "@/lib/project-scope";
+import { createEntries } from "@/lib/repository";
 import { currentMemberId } from "@/lib/server-access";
 import { entryInputSchema, errorMessage } from "@/lib/validation";
 
 export async function GET(request: Request) {
+  const memberId = await currentMemberId();
+  if (!memberId) return NextResponse.json({ error: "Enter your team email before viewing availability" }, { status: 401 });
   try {
     const url = new URL(request.url);
     const from = url.searchParams.get("from");
     const to = url.searchParams.get("to");
     if (!from || !to) throw new Error("A start and end date are required");
+    const projectId = requireProjectId(url.searchParams);
+    assertMemberCanUseProject(getDb(), memberId, projectId);
     const members = url.searchParams.getAll("member").map(Number).filter(Number.isFinite);
-    return NextResponse.json({ entries: listEntries(getDb(), from, to, members) });
-  } catch (error) { return NextResponse.json({ error: errorMessage(error) }, { status: 400 }); }
+    return NextResponse.json({ entries: scopedEntries(getDb(), projectId, memberId, from, to, members) });
+  } catch (error) { return NextResponse.json({ error: errorMessage(error) }, { status: isProjectAccessError(error) ? 403 : 400 }); }
 }
 
 export async function POST(request: Request) {
@@ -20,6 +26,7 @@ export async function POST(request: Request) {
   if (!memberId) return NextResponse.json({ error: "Enter your team email before adding availability" }, { status: 401 });
   try {
     const input = entryInputSchema.parse(await request.json());
+    assertWritableProject(getDb(), memberId, input.projectId);
     return NextResponse.json({ entries: createEntries(getDb(), memberId, input) }, { status: 201 });
-  } catch (error) { return NextResponse.json({ error: errorMessage(error) }, { status: 400 }); }
+  } catch (error) { return NextResponse.json({ error: errorMessage(error) }, { status: isProjectAccessError(error) ? 403 : 400 }); }
 }
