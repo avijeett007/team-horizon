@@ -34,6 +34,8 @@ describe("project-scoped visibility", () => {
     expect(scope.selectableProjects.map((project) => project.id)).toEqual([selectedProjectId]);
     expect(scope.members.map((member) => member.id)).toEqual([viewerId, colleagueId]);
     expect(scope.members.map((member) => member.id)).not.toContain(outsiderId);
+    expect(scope.members.find((member) => member.id === colleagueId)?.projectIds).toEqual([selectedProjectId]);
+    expect(scope.members.find((member) => member.id === colleagueId)?.ventureIds).toEqual([scope.selectedProject.ventureId]);
     expect(scope.projects.map((project) => project.id)).toEqual([selectedProjectId]);
     expect(scope.ventures.map((venture) => venture.name)).toEqual(["Knotie"]);
   });

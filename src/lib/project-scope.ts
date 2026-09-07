@@ -25,7 +25,9 @@ export function projectAudience(db: Sqlite, projectId: number): ProjectAudience 
     selectedProject,
     projects: [selectedProject],
     ventures: [venture],
-    members: data.members.filter((member) => member.projectIds.includes(projectId)),
+    members: data.members
+      .filter((member) => member.projectIds.includes(projectId))
+      .map((member) => ({ ...member, projectIds: [projectId], ventureIds: [selectedProject.ventureId] })),
   };
 }
 
