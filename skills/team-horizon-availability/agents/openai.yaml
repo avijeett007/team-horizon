@@ -1,0 +1,4 @@
+interface:
+  display_name: "Team Horizon Availability"
+  short_description: "Query declared team availability and coverage"
+  default_prompt: "Use $team-horizon-availability to summarize this project's current availability and weekly coverage gaps."

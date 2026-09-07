@@ -70,7 +70,14 @@ Use a long random value for `SESSION_SECRET`. The pilot deliberately does not ve
 
 ## AI agent access
 
-Set `AGENT_API_TOKEN`, then read one project's availability with:
+Set `AGENT_API_TOKEN`, then discover active projects and their assigned members with:
+
+```text
+GET /api/agent/projects
+Authorization: Bearer YOUR_TOKEN
+```
+
+Read one project's availability with:
 
 ```text
 GET /api/agent/availability?projectId=12&week=2026-09-07&from=2026-09-07T00:00:00.000Z&to=2026-09-14T00:00:00.000Z
@@ -90,6 +97,8 @@ Authorization: Bearer YOUR_TOKEN
 ```
 
 Monthly reports include weeks whose Monday falls in the selected month. The agent endpoints are read-only and disabled when the token is unset. Availability date ranges are limited to 366 days.
+
+The portable [`team-horizon-availability`](skills/team-horizon-availability/SKILL.md) skill adds project-name resolution, current/look-ahead availability, declaration filtering, coverage and carry summaries, reminder candidates, and common-time calculation. Give agents the skill folder and set `TEAM_HORIZON_AGENT_TOKEN`; do not store the token in the public repository.
 
 ## Weekly availability accounting
 
