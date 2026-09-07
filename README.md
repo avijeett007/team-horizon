@@ -9,11 +9,15 @@ A lightweight shared availability calendar for Knotie and Hexai. People voluntar
 - Optional weekday or weekly recurrence
 - Confirmed and provisional leave
 - Project colours and team filters
+- Project-scoped member calendars: people see only colleagues assigned to the selected project
+- One 40-hour Monday-to-Sunday availability target per person across all projects
+- Outstanding weekly hours carry forward until covered; surplus hours are not banked
 - Neutral seven-day “Needs an update” reminders
 - Common-time finder for selected people
 - Recognised-email access with self-only calendar changes
 - One-PIN admin setup for people, ventures, and projects
-- Optional, token-protected read-only availability API for AI agents
+- Weekly and monthly admin reports with CSV download
+- Token-protected availability and report APIs for AI agents
 - SQLite persistence and a production Docker image
 
 ## Run locally
@@ -65,14 +69,35 @@ Use a long random value for `SESSION_SECRET`. The pilot deliberately does not ve
 
 ## AI agent access
 
-Set `AGENT_API_TOKEN`, then read availability with:
+Set `AGENT_API_TOKEN`, then read one project's availability with:
 
 ```text
-GET /api/agent/availability?from=2026-09-01T00:00:00.000Z&to=2026-09-08T00:00:00.000Z
+GET /api/agent/availability?projectId=12&week=2026-09-07&from=2026-09-07T00:00:00.000Z&to=2026-09-14T00:00:00.000Z
 Authorization: Bearer YOUR_TOKEN
 ```
 
-The endpoint is read-only and is disabled when the token is unset. Date ranges are limited to 366 days.
+`projectId` is required and limits the response to active members assigned to that project. Entries connected to another project remain visible as calendar constraints, but their project name and note are redacted. The optional `week` accepts any ISO date within the intended Monday-to-Sunday week and defaults to the current week in each member's timezone.
+
+The `weeklyStatus` array contains each member's email, 40-hour base target, carried deficit, total target, available hours, remaining hours, Monday 09:00 local submission deadline, completion state, and `reminderNeeded` flag. Only entries marked `available` count. The calculation is global across the person's projects and overlapping availability counts once.
+
+Reports use the same definitions:
+
+```text
+GET /api/agent/reports/weekly?projectId=12&week=2026-09-07
+GET /api/agent/reports/monthly?projectId=12&month=2026-09
+Authorization: Bearer YOUR_TOKEN
+```
+
+Monthly reports include weeks whose Monday falls in the selected month. The agent endpoints are read-only and disabled when the token is unset. Availability date ranges are limited to 366 days.
+
+## Weekly availability accounting
+
+- The standard target is currently 40 hours per person per week, across all projects combined.
+- Each week runs from Monday 00:00 through Sunday 23:59 in the member's configured timezone.
+- Tentative time, project/busy time, confirmed leave, and provisional leave do not count toward the target.
+- If someone declares 30 hours, the next week's target is 50 hours. If they then declare 55 hours, the following target returns to 40 hours; extra time is not stored as future credit.
+- Existing members begin accruing from the first Monday after the database migration. New members begin on the first Monday on or after their creation date, so deployment does not manufacture historical deficits.
+- Admins can review the same global totals for a selected project's members under **Availability reports** and download the displayed rows as CSV.
 
 ## Checks
 
