@@ -2,7 +2,7 @@
 import "@testing-library/jest-dom/vitest";
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import { AdminLogin, MemberForm } from "./AdminApp";
+import { AdminLogin, MemberForm, ReportsPanel } from "./AdminApp";
 
 describe("admin interface", () => {
   it("uses one simple PIN prompt", () => {
@@ -18,5 +18,13 @@ describe("admin interface", () => {
     expect(screen.getByLabelText("Location")).toBeInTheDocument();
     expect(screen.getByLabelText("Time zone")).toBeInTheDocument();
     expect(screen.getByLabelText("Knotie")).toBeInTheDocument();
+  });
+
+  it("offers project-scoped weekly and monthly availability reports", () => {
+    render(<ReportsPanel projects={[{ id: 4, ventureId: 1, name: "Launch", colour: "#466CFF", active: true }]} />);
+    expect(screen.getByRole("heading", { name: /availability reports/i })).toBeInTheDocument();
+    expect(screen.getByLabelText(/report project/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/report period/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /download csv/i })).toBeInTheDocument();
   });
 });

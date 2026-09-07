@@ -256,6 +256,18 @@ a { color: inherit; }
 .admin-list small { overflow: hidden; color: var(--muted); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
 .admin-list button { border: 0; background: transparent; color: #9a4a40; font-size: 9px; font-weight: 700; cursor: pointer; }
 .admin-footnote { color: var(--muted); font-size: 10px; text-align: center; }
+.reports-card { margin-top: 18px; }
+.report-controls { display: flex; align-items: flex-end; gap: 9px; padding: 15px; border-radius: 12px; background: var(--mist); }
+.report-controls label { display: flex; flex: 1; flex-direction: column; gap: 5px; color: #46566c; font-size: 10px; font-weight: 700; }
+.report-controls input, .report-controls select { min-height: 42px; padding: 8px 10px; border: 1px solid #cdd6e3; border-radius: 9px; background: white; }
+.report-table-wrap { margin-top: 16px; overflow-x: auto; }
+.report-table { width: 100%; border-collapse: collapse; font-size: 11px; }
+.report-table th { padding: 9px; border-bottom: 1px solid var(--line); color: var(--muted); font: 600 9px var(--mono); text-align: left; }
+.report-table td { padding: 11px 9px; border-bottom: 1px solid var(--line); }
+.report-table td:first-child { display: flex; flex-direction: column; gap: 2px; }
+.report-table td small { color: var(--muted); font-size: 9px; }
+.report-complete, .report-open { display: inline-block; padding: 4px 7px; border-radius: 99px; background: #e9f5ef; color: #34735d; font-size: 9px; font-weight: 750; }
+.report-open { background: #fff0ed; color: #a14b3e; }
 
 @media (max-width: 1000px) {
   .summary-grid { grid-template-columns: repeat(2, 1fr); }
@@ -301,6 +313,8 @@ a { color: inherit; }
   .admin-card { padding: 18px; }
   .reference-forms { grid-template-columns: 1fr; }
   .admin-form .form-grid { grid-template-columns: 1fr; }
+  .report-controls { align-items: stretch; flex-direction: column; }
+  .report-controls label, .report-controls .button { width: 100%; }
 }
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
