@@ -1,9 +1,7 @@
-import type Database from "better-sqlite3";
 import { DateTime } from "luxon";
+import type { DbQueryable } from "./db";
 import { projectAudience } from "./project-scope";
 import { weeklyStatusesForMembers, type WeeklyStatus } from "./weekly-ledger";
-
-type Sqlite = Database.Database;
 
 export const LEDGER_DEFINITIONS = {
   accountingWeek: "Monday through Sunday in each member's timezone",
@@ -17,10 +15,10 @@ function mondayDate(value: string): string {
   return date.minus({ days: date.weekday - 1 }).toISODate()!;
 }
 
-export function buildWeeklyReport(db: Sqlite, projectId: number, week: string, nowUtc = DateTime.utc().toISO()!) {
-  const audience = projectAudience(db, projectId);
+export async function buildWeeklyReport(db: DbQueryable, projectId: number, week: string, nowUtc = DateTime.utc().toISO()!) {
+  const audience = await projectAudience(db, projectId);
   const weekStart = mondayDate(week);
-  const members = weeklyStatusesForMembers(db, audience.members, weekStart, nowUtc);
+  const members = await weeklyStatusesForMembers(db, audience.members, weekStart, nowUtc);
   return {
     generatedAt: nowUtc,
     project: audience.selectedProject,
@@ -46,7 +44,7 @@ export interface MonthlyMemberReport {
   weeklyStatuses: WeeklyStatus[];
 }
 
-export function buildMonthlyReport(db: Sqlite, projectId: number, month: string, nowUtc = DateTime.utc().toISO()!) {
+export async function buildMonthlyReport(db: DbQueryable, projectId: number, month: string, nowUtc = DateTime.utc().toISO()!) {
   if (!/^\d{4}-\d{2}$/.test(month)) throw new Error("month must use YYYY-MM");
   const first = DateTime.fromFormat(month, "yyyy-MM", { zone: "utc" }).startOf("month");
   if (!first.isValid || first.toFormat("yyyy-MM") !== month) throw new Error("month must use YYYY-MM");
@@ -58,9 +56,9 @@ export function buildMonthlyReport(db: Sqlite, projectId: number, month: string,
     cursor = cursor.plus({ days: 7 });
   }
 
-  const audience = projectAudience(db, projectId);
-  const members: MonthlyMemberReport[] = audience.members.map((member) => {
-    const weeklyStatuses = weeks.map((week) => weeklyStatusesForMembers(db, [member], week, nowUtc)[0]);
+  const audience = await projectAudience(db, projectId);
+  const members: MonthlyMemberReport[] = await Promise.all(audience.members.map(async (member) => {
+    const weeklyStatuses = await Promise.all(weeks.map(async (week) => (await weeklyStatusesForMembers(db, [member], week, nowUtc))[0]));
     return {
       memberId: member.id,
       memberName: member.name,
@@ -74,7 +72,7 @@ export function buildMonthlyReport(db: Sqlite, projectId: number, month: string,
       totalWeeks: weeklyStatuses.filter((status) => status.targetHours > 0).length,
       weeklyStatuses,
     };
-  });
+  }));
 
   return { generatedAt: nowUtc, project: audience.selectedProject, venture: audience.ventures[0], month, weeks, definitions: LEDGER_DEFINITIONS, members };
 }

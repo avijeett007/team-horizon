@@ -1,9 +1,7 @@
-import type Database from "better-sqlite3";
 import { DateTime } from "luxon";
+import type { DbQueryable } from "./db";
 import type { Member } from "./domain";
 import { listEntries } from "./repository";
-
-type Sqlite = Database.Database;
 
 export const BASE_WEEKLY_TARGET_MINUTES = 2_400;
 
@@ -30,11 +28,11 @@ function mondayFor(value: string, zone: string): DateTime {
   return date.minus({ days: date.weekday - 1 });
 }
 
-function uniqueAvailableMinutes(db: Sqlite, memberId: number, weekStart: DateTime): number {
+async function uniqueAvailableMinutes(db: DbQueryable, memberId: number, weekStart: DateTime): Promise<number> {
   const weekEnd = weekStart.plus({ days: 7 });
   const lower = weekStart.toUTC().toMillis();
   const upper = weekEnd.toUTC().toMillis();
-  const ranges = listEntries(db, weekStart.toUTC().toISO()!, weekEnd.toUTC().toISO()!, [memberId])
+  const ranges = (await listEntries(db, weekStart.toUTC().toISO()!, weekEnd.toUTC().toISO()!, [memberId]))
     .filter((entry) => entry.status === "available")
     .map((entry) => [Math.max(lower, Date.parse(entry.startsAtUtc)), Math.min(upper, Date.parse(entry.endsAtUtc))] as const)
     .filter(([start, end]) => end > start)
@@ -61,12 +59,12 @@ function uniqueAvailableMinutes(db: Sqlite, memberId: number, weekStart: DateTim
 
 const hours = (minutes: number): number => Math.round((minutes / 60) * 100) / 100;
 
-export function weeklyStatusForMember(
-  db: Sqlite,
+export async function weeklyStatusForMember(
+  db: DbQueryable,
   member: Member,
   weekDate: string,
   nowUtc = DateTime.utc().toISO()!,
-): WeeklyStatus {
+): Promise<WeeklyStatus> {
   const requestedWeek = mondayFor(weekDate, member.timezone);
   const requirementWeek = mondayFor(member.weeklyRequirementStart, member.timezone);
   const due = requestedWeek.plus({ hours: 9 }).toUTC();
@@ -91,7 +89,7 @@ export function weeklyStatusForMember(
   let requestedTarget = BASE_WEEKLY_TARGET_MINUTES;
   let cursor = requirementWeek;
   while (cursor.toMillis() <= requestedWeek.toMillis()) {
-    const availableMinutes = uniqueAvailableMinutes(db, member.id, cursor);
+    const availableMinutes = await uniqueAvailableMinutes(db, member.id, cursor);
     const targetMinutes = BASE_WEEKLY_TARGET_MINUTES + carryMinutes;
     if (cursor.toMillis() === requestedWeek.toMillis()) {
       requestedAvailable = availableMinutes;
@@ -116,11 +114,11 @@ export function weeklyStatusForMember(
   };
 }
 
-export function weeklyStatusesForMembers(
-  db: Sqlite,
+export async function weeklyStatusesForMembers(
+  db: DbQueryable,
   members: Member[],
   weekDate: string,
   nowUtc?: string,
-): WeeklyStatus[] {
-  return members.map((member) => weeklyStatusForMember(db, member, weekDate, nowUtc));
+): Promise<WeeklyStatus[]> {
+  return Promise.all(members.map((member) => weeklyStatusForMember(db, member, weekDate, nowUtc)));
 }

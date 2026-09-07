@@ -1,8 +1,6 @@
-import type Database from "better-sqlite3";
+import type { DbQueryable } from "./db";
 import { assertMemberCanUseProject, projectAudience, resolveMemberProject } from "./project-scope";
 import { findMemberById } from "./repository";
-
-type Sqlite = Database.Database;
 
 export function requireProjectId(searchParams: URLSearchParams): number {
   const raw = searchParams.get("projectId");
@@ -12,18 +10,18 @@ export function requireProjectId(searchParams: URLSearchParams): number {
   return projectId;
 }
 
-export function buildMemberBootstrap(db: Sqlite, memberId: number, requestedProjectId?: number) {
-  const sessionMember = findMemberById(db, memberId);
+export async function buildMemberBootstrap(db: DbQueryable, memberId: number, requestedProjectId?: number) {
+  const sessionMember = await findMemberById(db, memberId);
   if (!sessionMember) throw new Error("Member access is required");
-  return { ...resolveMemberProject(db, memberId, requestedProjectId), sessionMember, admin: false, hasMembers: true };
+  return { ...(await resolveMemberProject(db, memberId, requestedProjectId)), sessionMember, admin: false, hasMembers: true };
 }
 
-export function assertWritableProject(db: Sqlite, memberId: number, projectId: number | null): void {
-  if (projectId != null) assertMemberCanUseProject(db, memberId, projectId);
+export async function assertWritableProject(db: DbQueryable, memberId: number, projectId: number | null): Promise<void> {
+  if (projectId != null) await assertMemberCanUseProject(db, memberId, projectId);
 }
 
-export function assertRequestedMembersInProject(db: Sqlite, projectId: number, memberIds: number[]): number[] {
-  const audienceIds = new Set(projectAudience(db, projectId).members.map((member) => member.id));
+export async function assertRequestedMembersInProject(db: DbQueryable, projectId: number, memberIds: number[]): Promise<number[]> {
+  const audienceIds = new Set((await projectAudience(db, projectId)).members.map((member) => member.id));
   if (memberIds.some((memberId) => !audienceIds.has(memberId))) throw new Error("Selected people must belong to this project");
   return memberIds;
 }
