@@ -1,9 +1,8 @@
-import type Database from "better-sqlite3";
 import { DateTime } from "luxon";
+import type { PoolClient, QueryResultRow } from "pg";
+import type { DbPool, DbQueryable } from "./db";
 import type { CalendarEntry, CalendarStatus, LeaveCertainty, Member, Project, Venture } from "./domain";
 import { expandRecurrence, type RecurrenceRule } from "./recurrence";
-
-type Sqlite = Database.Database;
 
 export interface MemberInput {
   name: string;
@@ -34,154 +33,285 @@ export interface DisplayEntry extends CalendarEntry {
   ventureName: string | null;
 }
 
-const bool = (value: unknown) => Boolean(value);
+function timestamp(value: unknown): string {
+  if (value instanceof Date) return value.toISOString();
+  const parsed = new Date(String(value));
+  return Number.isNaN(parsed.valueOf()) ? String(value) : parsed.toISOString();
+}
 
-function mapMember(db: Sqlite, row: Record<string, unknown>): Member {
+function dateOnly(value: unknown): string {
+  if (value instanceof Date) return value.toISOString().slice(0, 10);
+  return String(value).slice(0, 10);
+}
+
+async function withTransaction<T>(db: DbPool, work: (client: PoolClient) => Promise<T>): Promise<T> {
+  const client = await db.connect();
+  try {
+    await client.query("BEGIN");
+    const result = await work(client);
+    await client.query("COMMIT");
+    return result;
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+async function assertAssociationsExist(client: DbQueryable, input: MemberInput): Promise<void> {
+  if (input.ventureIds.length) {
+    const placeholders = input.ventureIds.map((_, index) => `$${index + 1}`).join(",");
+    const result = await client.query(`SELECT id FROM ventures WHERE id IN (${placeholders})`, input.ventureIds);
+    if (result.rowCount !== new Set(input.ventureIds).size) throw new Error("Venture association is invalid");
+  }
+  if (input.projectIds.length) {
+    const placeholders = input.projectIds.map((_, index) => `$${index + 1}`).join(",");
+    const result = await client.query(`SELECT id FROM projects WHERE id IN (${placeholders})`, input.projectIds);
+    if (result.rowCount !== new Set(input.projectIds).size) throw new Error("Project association is invalid");
+  }
+}
+
+async function mapMember(db: DbQueryable, row: QueryResultRow): Promise<Member> {
+  const [ventures, projects] = await Promise.all([
+    db.query<{ id: number }>("SELECT venture_id AS id FROM member_ventures WHERE member_id = $1", [row.id]),
+    db.query<{ id: number }>("SELECT project_id AS id FROM member_projects WHERE member_id = $1", [row.id]),
+  ]);
   return {
-    id: Number(row.id), name: String(row.name), email: String(row.email), location: String(row.location),
-    timezone: String(row.timezone), weeklyRequirementStart: String(row.weekly_requirement_start), active: bool(row.active),
-    ventureIds: (db.prepare("SELECT venture_id id FROM member_ventures WHERE member_id = ?").all(row.id) as Array<{ id: number }>).map((item) => item.id),
-    projectIds: (db.prepare("SELECT project_id id FROM member_projects WHERE member_id = ?").all(row.id) as Array<{ id: number }>).map((item) => item.id),
+    id: Number(row.id),
+    name: String(row.name),
+    email: String(row.email),
+    location: String(row.location),
+    timezone: String(row.timezone),
+    weeklyRequirementStart: dateOnly(row.weekly_requirement_start),
+    active: Boolean(row.active),
+    ventureIds: ventures.rows.map((item) => Number(item.id)),
+    projectIds: projects.rows.map((item) => Number(item.id)),
   };
 }
 
-export function createVenture(db: Sqlite, input: { name: string; colour: string }): Venture {
-  const result = db.prepare("INSERT INTO ventures(name, colour) VALUES (?, ?)").run(input.name.trim(), input.colour);
-  return { id: Number(result.lastInsertRowid), name: input.name.trim(), colour: input.colour, active: true };
+export async function createVenture(db: DbQueryable, input: { name: string; colour: string }): Promise<Venture> {
+  const name = input.name.trim();
+  const result = await db.query<{ id: number }>(
+    "INSERT INTO ventures(name, colour) VALUES ($1, $2) RETURNING id",
+    [name, input.colour],
+  );
+  return { id: Number(result.rows[0].id), name, colour: input.colour, active: true };
 }
 
-export function createProject(db: Sqlite, input: { ventureId: number; name: string; colour: string }): Project {
-  const result = db.prepare("INSERT INTO projects(venture_id, name, colour) VALUES (?, ?, ?)").run(input.ventureId, input.name.trim(), input.colour);
-  return { id: Number(result.lastInsertRowid), ventureId: input.ventureId, name: input.name.trim(), colour: input.colour, active: true };
+export async function createProject(db: DbQueryable, input: { ventureId: number; name: string; colour: string }): Promise<Project> {
+  const name = input.name.trim();
+  const result = await db.query<{ id: number }>(
+    "INSERT INTO projects(venture_id, name, colour) VALUES ($1, $2, $3) RETURNING id",
+    [input.ventureId, name, input.colour],
+  );
+  return { id: Number(result.rows[0].id), ventureId: input.ventureId, name, colour: input.colour, active: true };
 }
 
-export function createMember(db: Sqlite, input: MemberInput): Member {
-  return db.transaction(() => {
+export async function createMember(db: DbPool, input: MemberInput): Promise<Member> {
+  return withTransaction(db, async (client) => {
+    await assertAssociationsExist(client, input);
     const createdDate = DateTime.now().setZone(input.timezone).startOf("day");
     const weeklyRequirementStart = createdDate.plus({ days: (8 - createdDate.weekday) % 7 }).toISODate()!;
-    const result = db.prepare("INSERT INTO members(name, email, location, timezone, weekly_requirement_start) VALUES (?, ?, ?, ?, ?)")
-      .run(input.name.trim(), input.email.trim().toLowerCase(), input.location.trim(), input.timezone, weeklyRequirementStart);
-    const id = Number(result.lastInsertRowid);
-    const addVenture = db.prepare("INSERT INTO member_ventures(member_id, venture_id) VALUES (?, ?)");
-    const addProject = db.prepare("INSERT INTO member_projects(member_id, project_id) VALUES (?, ?)");
-    for (const ventureId of input.ventureIds) addVenture.run(id, ventureId);
-    for (const projectId of input.projectIds) addProject.run(id, projectId);
-    return { id, ...input, name: input.name.trim(), email: input.email.trim().toLowerCase(), location: input.location.trim(), weeklyRequirementStart, active: true };
-  })();
+    const name = input.name.trim();
+    const email = input.email.trim().toLowerCase();
+    const location = input.location.trim();
+    const result = await client.query<{ id: number }>(
+      `INSERT INTO members(name, email, location, timezone, weekly_requirement_start)
+       VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+      [name, email, location, input.timezone, weeklyRequirementStart],
+    );
+    const id = Number(result.rows[0].id);
+    for (const ventureId of input.ventureIds) {
+      await client.query("INSERT INTO member_ventures(member_id, venture_id) VALUES ($1, $2)", [id, ventureId]);
+    }
+    for (const projectId of input.projectIds) {
+      await client.query("INSERT INTO member_projects(member_id, project_id) VALUES ($1, $2)", [id, projectId]);
+    }
+    return {
+      id,
+      name,
+      email,
+      location,
+      timezone: input.timezone,
+      weeklyRequirementStart,
+      ventureIds: [...input.ventureIds],
+      projectIds: [...input.projectIds],
+      active: true,
+    };
+  });
 }
 
-export function updateMember(db: Sqlite, id: number, input: MemberInput & { active?: boolean }): Member {
-  return db.transaction(() => {
-    const result = db.prepare("UPDATE members SET name=?, email=?, location=?, timezone=?, active=?, updated_at=CURRENT_TIMESTAMP WHERE id=?")
-      .run(input.name.trim(), input.email.trim().toLowerCase(), input.location.trim(), input.timezone, input.active === false ? 0 : 1, id);
-    if (!result.changes) throw new Error("Member not found");
-    db.prepare("DELETE FROM member_ventures WHERE member_id=?").run(id);
-    db.prepare("DELETE FROM member_projects WHERE member_id=?").run(id);
-    const addVenture = db.prepare("INSERT INTO member_ventures(member_id, venture_id) VALUES (?, ?)");
-    const addProject = db.prepare("INSERT INTO member_projects(member_id, project_id) VALUES (?, ?)");
-    for (const ventureId of input.ventureIds) addVenture.run(id, ventureId);
-    for (const projectId of input.projectIds) addProject.run(id, projectId);
-    return findMemberById(db, id)!;
-  })();
+export async function updateMember(db: DbPool, id: number, input: MemberInput & { active?: boolean }): Promise<Member> {
+  return withTransaction(db, async (client) => {
+    await assertAssociationsExist(client, input);
+    const result = await client.query(
+      `UPDATE members SET name=$1, email=$2, location=$3, timezone=$4, active=$5, updated_at=CURRENT_TIMESTAMP
+       WHERE id=$6`,
+      [input.name.trim(), input.email.trim().toLowerCase(), input.location.trim(), input.timezone, input.active !== false, id],
+    );
+    if (!result.rowCount) throw new Error("Member not found");
+    await client.query("DELETE FROM member_ventures WHERE member_id=$1", [id]);
+    await client.query("DELETE FROM member_projects WHERE member_id=$1", [id]);
+    for (const ventureId of input.ventureIds) {
+      await client.query("INSERT INTO member_ventures(member_id, venture_id) VALUES ($1, $2)", [id, ventureId]);
+    }
+    for (const projectId of input.projectIds) {
+      await client.query("INSERT INTO member_projects(member_id, project_id) VALUES ($1, $2)", [id, projectId]);
+    }
+    const member = await findMemberById(client, id, true);
+    if (!member) throw new Error("Member not found");
+    return member;
+  });
 }
 
-export function findMemberByEmail(db: Sqlite, email: string): Member | null {
-  const row = db.prepare("SELECT * FROM members WHERE email = ? COLLATE NOCASE AND active = 1").get(email.trim()) as Record<string, unknown> | undefined;
-  return row ? mapMember(db, row) : null;
+export async function findMemberByEmail(db: DbQueryable, email: string): Promise<Member | null> {
+  const result = await db.query("SELECT * FROM members WHERE LOWER(email) = LOWER($1) AND active = TRUE", [email.trim()]);
+  return result.rows[0] ? mapMember(db, result.rows[0]) : null;
 }
 
-export function findMemberById(db: Sqlite, id: number): Member | null {
-  const row = db.prepare("SELECT * FROM members WHERE id = ? AND active = 1").get(id) as Record<string, unknown> | undefined;
-  return row ? mapMember(db, row) : null;
+export async function findMemberById(db: DbQueryable, id: number, includeArchived = false): Promise<Member | null> {
+  const activeClause = includeArchived ? "" : " AND active = TRUE";
+  const result = await db.query(`SELECT * FROM members WHERE id = $1${activeClause}`, [id]);
+  return result.rows[0] ? mapMember(db, result.rows[0]) : null;
 }
 
-export function listBootstrap(db: Sqlite, includeArchived = false): { members: Member[]; ventures: Venture[]; projects: Project[] } {
-  const clause = includeArchived ? "" : " WHERE active = 1";
-  const memberRows = db.prepare(`SELECT * FROM members${clause} ORDER BY name`).all() as Array<Record<string, unknown>>;
-  const ventures = (db.prepare(`SELECT * FROM ventures${clause} ORDER BY name`).all() as Array<Record<string, unknown>>).map((row) => ({
-    id: Number(row.id), name: String(row.name), colour: String(row.colour), active: bool(row.active),
+export async function listBootstrap(db: DbQueryable, includeArchived = false): Promise<{ members: Member[]; ventures: Venture[]; projects: Project[] }> {
+  const clause = includeArchived ? "" : " WHERE active = TRUE";
+  const [memberRows, ventureRows, projectRows] = await Promise.all([
+    db.query(`SELECT * FROM members${clause} ORDER BY name`),
+    db.query(`SELECT * FROM ventures${clause} ORDER BY name`),
+    db.query(`SELECT * FROM projects${clause} ORDER BY name`),
+  ]);
+  const members = await Promise.all(memberRows.rows.map((row) => mapMember(db, row)));
+  const ventures = ventureRows.rows.map((row) => ({
+    id: Number(row.id), name: String(row.name), colour: String(row.colour), active: Boolean(row.active),
   }));
-  const projects = (db.prepare(`SELECT * FROM projects${clause} ORDER BY name`).all() as Array<Record<string, unknown>>).map((row) => ({
-    id: Number(row.id), ventureId: Number(row.venture_id), name: String(row.name), colour: String(row.colour), active: bool(row.active),
+  const projects = projectRows.rows.map((row) => ({
+    id: Number(row.id), ventureId: Number(row.venture_id), name: String(row.name), colour: String(row.colour), active: Boolean(row.active),
   }));
-  return { members: memberRows.map((row) => mapMember(db, row)), ventures, projects };
+  return { members, ventures, projects };
 }
 
-function mapEntry(row: Record<string, unknown>): DisplayEntry {
+function mapEntry(row: QueryResultRow): DisplayEntry {
   return {
-    id: Number(row.id), memberId: Number(row.member_id), seriesId: row.series_id == null ? null : Number(row.series_id),
-    projectId: row.project_id == null ? null : Number(row.project_id), status: row.status as CalendarStatus,
-    note: row.note == null ? null : String(row.note), leaveCertainty: row.leave_certainty as LeaveCertainty | null,
-    startsAtUtc: String(row.starts_at_utc), endsAtUtc: String(row.ends_at_utc), originalDate: String(row.original_date),
-    memberName: String(row.member_name), memberTimezone: String(row.member_timezone),
+    id: Number(row.id),
+    memberId: Number(row.member_id),
+    seriesId: row.series_id == null ? null : Number(row.series_id),
+    projectId: row.project_id == null ? null : Number(row.project_id),
+    status: row.status as CalendarStatus,
+    note: row.note == null ? null : String(row.note),
+    leaveCertainty: row.leave_certainty as LeaveCertainty | null,
+    startsAtUtc: timestamp(row.starts_at_utc),
+    endsAtUtc: timestamp(row.ends_at_utc),
+    originalDate: dateOnly(row.original_date),
+    memberName: String(row.member_name),
+    memberTimezone: String(row.member_timezone),
     projectName: row.project_name == null ? null : String(row.project_name),
     projectColour: row.project_colour == null ? null : String(row.project_colour),
     ventureName: row.venture_name == null ? null : String(row.venture_name),
   };
 }
 
-const ENTRY_SELECT = `SELECT e.*, m.name member_name, m.timezone member_timezone,
-  p.name project_name, p.colour project_colour, v.name venture_name
+const ENTRY_SELECT = `SELECT e.*, m.name AS member_name, m.timezone AS member_timezone,
+  p.name AS project_name, p.colour AS project_colour, v.name AS venture_name
   FROM calendar_entries e JOIN members m ON m.id=e.member_id
   LEFT JOIN projects p ON p.id=e.project_id LEFT JOIN ventures v ON v.id=p.venture_id`;
 
-export function listEntries(db: Sqlite, fromUtc: string, toUtc: string, memberIds: number[] = []): DisplayEntry[] {
+export async function listEntries(db: DbQueryable, fromUtc: string, toUtc: string, memberIds: number[] = []): Promise<DisplayEntry[]> {
   const from = Date.parse(fromUtc);
   const to = Date.parse(toUtc);
-  if (!Number.isFinite(from) || !Number.isFinite(to) || to <= from || to - from > 366 * 86_400_000) throw new Error("Date range must be between 1 and 366 days");
-  const memberClause = memberIds.length ? ` AND e.member_id IN (${memberIds.map(() => "?").join(",")})` : "";
-  const rows = db.prepare(`${ENTRY_SELECT} WHERE e.ends_at_utc > ? AND e.starts_at_utc < ?${memberClause} ORDER BY e.starts_at_utc`)
-    .all(fromUtc, toUtc, ...memberIds) as Array<Record<string, unknown>>;
-  return rows.map(mapEntry);
+  if (!Number.isFinite(from) || !Number.isFinite(to) || to <= from || to - from > 366 * 86_400_000) {
+    throw new Error("Date range must be between 1 and 366 days");
+  }
+  const memberClause = memberIds.length
+    ? ` AND e.member_id IN (${memberIds.map((_, index) => `$${index + 3}`).join(",")})`
+    : "";
+  const values: unknown[] = [fromUtc, toUtc, ...memberIds];
+  const result = await db.query(
+    `${ENTRY_SELECT} WHERE e.ends_at_utc > $1 AND e.starts_at_utc < $2${memberClause} ORDER BY e.starts_at_utc`,
+    values,
+  );
+  return result.rows.map(mapEntry);
 }
 
-export function createEntries(db: Sqlite, memberId: number, input: EntryInput): DisplayEntry[] {
+export async function createEntries(db: DbPool, memberId: number, input: EntryInput): Promise<DisplayEntry[]> {
   const occurrences = expandRecurrence(input);
   if (!occurrences.length) throw new Error("No occurrences fall in this recurrence");
-  return db.transaction(() => {
-    const series = db.prepare(`INSERT INTO calendar_series
-      (member_id, project_id, status, note, leave_certainty, timezone, local_start_time, local_end_time, recurrence_rule, recurrence_until)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-      .run(memberId, input.projectId, input.status, input.note, input.leaveCertainty, input.timezone, input.startTime, input.endTime,
-        input.recurrence ? JSON.stringify(input.recurrence) : null, input.recurrence?.until ?? null);
-    const seriesId = Number(series.lastInsertRowid);
-    const insert = db.prepare(`INSERT INTO calendar_entries
-      (member_id, series_id, project_id, status, note, leave_certainty, starts_at_utc, ends_at_utc, original_date)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+  return withTransaction(db, async (client) => {
+    const series = await client.query<{ id: number }>(
+      `INSERT INTO calendar_series
+       (member_id, project_id, status, note, leave_certainty, timezone, local_start_time, local_end_time, recurrence_rule, recurrence_until)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id`,
+      [memberId, input.projectId, input.status, input.note, input.leaveCertainty, input.timezone, input.startTime,
+        input.endTime, input.recurrence ? JSON.stringify(input.recurrence) : null, input.recurrence?.until ?? null],
+    );
+    const seriesId = Number(series.rows[0].id);
     const ids: number[] = [];
     for (const occurrence of occurrences) {
-      const result = insert.run(memberId, seriesId, input.projectId, input.status, input.note, input.leaveCertainty,
-        occurrence.startsAtUtc, occurrence.endsAtUtc, occurrence.originalDate);
-      ids.push(Number(result.lastInsertRowid));
+      const result = await client.query<{ id: number }>(
+        `INSERT INTO calendar_entries
+         (member_id, series_id, project_id, status, note, leave_certainty, starts_at_utc, ends_at_utc, original_date)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
+        [memberId, seriesId, input.projectId, input.status, input.note, input.leaveCertainty,
+          occurrence.startsAtUtc, occurrence.endsAtUtc, occurrence.originalDate],
+      );
+      ids.push(Number(result.rows[0].id));
     }
-    return ids.map((id) => mapEntry(db.prepare(`${ENTRY_SELECT} WHERE e.id=?`).get(id) as Record<string, unknown>));
-  })();
+    const placeholders = ids.map((_, index) => `$${index + 1}`).join(",");
+    const created = await client.query(`${ENTRY_SELECT} WHERE e.id IN (${placeholders}) ORDER BY e.starts_at_utc`, ids);
+    return created.rows.map(mapEntry);
+  });
 }
 
-export function updateOwnedEntry(db: Sqlite, memberId: number, entryId: number, patch: Partial<Pick<EntryInput, "status" | "projectId" | "note" | "leaveCertainty">>): DisplayEntry {
-  const existing = db.prepare("SELECT id FROM calendar_entries WHERE id=? AND member_id=?").get(entryId, memberId);
-  if (!existing) throw new Error("Entry not found");
-  const fields: string[] = [];
+export async function updateOwnedEntry(
+  db: DbQueryable,
+  memberId: number,
+  entryId: number,
+  patch: Partial<Pick<EntryInput, "status" | "projectId" | "note" | "leaveCertainty">>,
+): Promise<DisplayEntry> {
+  const names = { status: "status", projectId: "project_id", note: "note", leaveCertainty: "leave_certainty" } as const;
   const values: unknown[] = [];
-  const names: Record<string, string> = { status: "status", projectId: "project_id", note: "note", leaveCertainty: "leave_certainty" };
+  const fields: string[] = [];
   for (const [key, column] of Object.entries(names)) {
-    if (key in patch) { fields.push(`${column}=?`); values.push(patch[key as keyof typeof patch]); }
+    if (key in patch) {
+      values.push(patch[key as keyof typeof patch]);
+      fields.push(`${column}=$${values.length}`);
+    }
   }
-  if (fields.length) db.prepare(`UPDATE calendar_entries SET ${fields.join(",")}, updated_at=CURRENT_TIMESTAMP WHERE id=? AND member_id=?`).run(...values, entryId, memberId);
-  return mapEntry(db.prepare(`${ENTRY_SELECT} WHERE e.id=?`).get(entryId) as Record<string, unknown>);
+  if (fields.length) {
+    values.push(entryId, memberId);
+    const result = await db.query(
+      `UPDATE calendar_entries SET ${fields.join(",")}, updated_at=CURRENT_TIMESTAMP
+       WHERE id=$${values.length - 1} AND member_id=$${values.length}`,
+      values,
+    );
+    if (!result.rowCount) throw new Error("Entry not found");
+  } else {
+    const existing = await db.query("SELECT id FROM calendar_entries WHERE id=$1 AND member_id=$2", [entryId, memberId]);
+    if (!existing.rowCount) throw new Error("Entry not found");
+  }
+  const entry = await db.query(`${ENTRY_SELECT} WHERE e.id=$1`, [entryId]);
+  if (!entry.rows[0]) throw new Error("Entry not found");
+  return mapEntry(entry.rows[0]);
 }
 
-export function deleteOwnedEntry(db: Sqlite, memberId: number, entryId: number): boolean {
-  return db.prepare("DELETE FROM calendar_entries WHERE id=? AND member_id=?").run(entryId, memberId).changes > 0;
+export async function deleteOwnedEntry(db: DbQueryable, memberId: number, entryId: number): Promise<boolean> {
+  const result = await db.query("DELETE FROM calendar_entries WHERE id=$1 AND member_id=$2", [entryId, memberId]);
+  return Boolean(result.rowCount);
 }
 
-export function archiveReference(db: Sqlite, type: "member" | "project" | "venture", id: number): boolean {
+export async function archiveReference(db: DbPool, type: "member" | "project" | "venture", id: number): Promise<boolean> {
   const table = type === "member" ? "members" : type === "project" ? "projects" : "ventures";
-  return db.transaction(() => {
-    const changed = db.prepare(`UPDATE ${table} SET active=0, updated_at=CURRENT_TIMESTAMP WHERE id=?`).run(id).changes > 0;
+  return withTransaction(db, async (client) => {
+    const result = await client.query(
+      `UPDATE ${table} SET active=FALSE, updated_at=CURRENT_TIMESTAMP WHERE id=$1`,
+      [id],
+    );
+    const changed = Boolean(result.rowCount);
     if (changed && type === "venture") {
-      db.prepare("UPDATE projects SET active=0, updated_at=CURRENT_TIMESTAMP WHERE venture_id=?").run(id);
+      await client.query("UPDATE projects SET active=FALSE, updated_at=CURRENT_TIMESTAMP WHERE venture_id=$1", [id]);
     }
     return changed;
-  })();
+  });
 }
