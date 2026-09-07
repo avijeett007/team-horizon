@@ -20,6 +20,7 @@ export interface Member {
   email: string;
   location: string;
   timezone: string;
+  weeklyRequirementStart: string;
   active: boolean;
   ventureIds: number[];
   projectIds: number[];

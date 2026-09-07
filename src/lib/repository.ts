@@ -1,4 +1,5 @@
 import type Database from "better-sqlite3";
+import { DateTime } from "luxon";
 import type { CalendarEntry, CalendarStatus, LeaveCertainty, Member, Project, Venture } from "./domain";
 import { expandRecurrence, type RecurrenceRule } from "./recurrence";
 
@@ -38,7 +39,7 @@ const bool = (value: unknown) => Boolean(value);
 function mapMember(db: Sqlite, row: Record<string, unknown>): Member {
   return {
     id: Number(row.id), name: String(row.name), email: String(row.email), location: String(row.location),
-    timezone: String(row.timezone), active: bool(row.active),
+    timezone: String(row.timezone), weeklyRequirementStart: String(row.weekly_requirement_start), active: bool(row.active),
     ventureIds: (db.prepare("SELECT venture_id id FROM member_ventures WHERE member_id = ?").all(row.id) as Array<{ id: number }>).map((item) => item.id),
     projectIds: (db.prepare("SELECT project_id id FROM member_projects WHERE member_id = ?").all(row.id) as Array<{ id: number }>).map((item) => item.id),
   };
@@ -56,14 +57,16 @@ export function createProject(db: Sqlite, input: { ventureId: number; name: stri
 
 export function createMember(db: Sqlite, input: MemberInput): Member {
   return db.transaction(() => {
-    const result = db.prepare("INSERT INTO members(name, email, location, timezone) VALUES (?, ?, ?, ?)")
-      .run(input.name.trim(), input.email.trim().toLowerCase(), input.location.trim(), input.timezone);
+    const createdDate = DateTime.now().setZone(input.timezone).startOf("day");
+    const weeklyRequirementStart = createdDate.plus({ days: (8 - createdDate.weekday) % 7 }).toISODate()!;
+    const result = db.prepare("INSERT INTO members(name, email, location, timezone, weekly_requirement_start) VALUES (?, ?, ?, ?, ?)")
+      .run(input.name.trim(), input.email.trim().toLowerCase(), input.location.trim(), input.timezone, weeklyRequirementStart);
     const id = Number(result.lastInsertRowid);
     const addVenture = db.prepare("INSERT INTO member_ventures(member_id, venture_id) VALUES (?, ?)");
     const addProject = db.prepare("INSERT INTO member_projects(member_id, project_id) VALUES (?, ?)");
     for (const ventureId of input.ventureIds) addVenture.run(id, ventureId);
     for (const projectId of input.projectIds) addProject.run(id, projectId);
-    return { id, ...input, name: input.name.trim(), email: input.email.trim().toLowerCase(), location: input.location.trim(), active: true };
+    return { id, ...input, name: input.name.trim(), email: input.email.trim().toLowerCase(), location: input.location.trim(), weeklyRequirementStart, active: true };
   })();
 }
 

@@ -32,7 +32,10 @@ describe("calendar repository", () => {
   });
 
   it("finds a member email case-insensitively", () => {
-    expect(findMemberByEmail(db, "  asha@EXAMPLE.com ")?.id).toBe(memberId);
+    const member = findMemberByEmail(db, "  asha@EXAMPLE.com ");
+    expect(member?.id).toBe(memberId);
+    expect(member?.weeklyRequirementStart).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(new Date(`${member!.weeklyRequirementStart}T12:00:00Z`).getUTCDay()).toBe(1);
   });
 
   it("creates one materialised entry for every weekly occurrence", () => {
