@@ -1,10 +1,9 @@
 [variables]
 PORT = "3009"
 HOSTNAME = "0.0.0.0"
-DATABASE_PATH = "/app/data/team-calendar.db"
 
 [phases.setup]
-nixPkgs = ["nodejs_22", "python3", "gcc", "gnumake"]
+nixPkgs = ["nodejs_22"]
 
 [phases.install]
 cmds = ["npm ci"]

@@ -18,30 +18,31 @@ A lightweight shared availability calendar for Knotie and Hexai. People voluntar
 - One-PIN admin setup for people, ventures, and projects
 - Weekly and monthly admin reports with CSV download
 - Token-protected availability and report APIs for AI agents
-- SQLite persistence and a production Docker image
+- PostgreSQL persistence and a production Docker image
 
 ## Run locally
 
-1. Copy `.env.example` to `.env.local` and replace the example values.
+1. Create a PostgreSQL database, copy `.env.example` to `.env.local`, and replace the example values (especially `DATABASE_URL`).
 2. Run `npm install`.
 3. Run `npm run dev` and open `http://localhost:3000`.
 4. Open `/admin`, enter the configured PIN, and add Knotie, Hexai, projects, and team members.
 
-The local database is created at `data/team-calendar.db` unless `DATABASE_PATH` is changed.
+The application automatically creates and migrates its `team_horizon` PostgreSQL schema on the first database-backed request. For isolated development or tests, `DATABASE_SCHEMA` can select another safe schema name.
 
 ## Deploy with Coolify
 
-Create a new application from this repository and select **Dockerfile** as the Build Pack. Coolify defaults to Nixpacks, so change this field explicitly; the included Dockerfile uses the required Node 22 runtime and native SQLite build tools.
+Create a PostgreSQL resource in Coolify, then create an application from this repository and select **Dockerfile** as the Build Pack. The included image uses Node 22 and contains no local database state.
 
 - Exposed port: `3009`
 - Host port mapping for this Nginx setup: `3009:3009`
 - Health check path: `/api/health`
-- Persistent storage: mount a volume at `/app/data`
-- Required environment values: `ADMIN_PIN`, `SESSION_SECRET`
+- Required environment values: `DATABASE_URL`, `ADMIN_PIN`, `SESSION_SECRET`
 - Optional environment value: `AGENT_API_TOKEN`
-- Database path: the image already sets `DATABASE_PATH=/app/data/team-calendar.db`
+- Optional environment value: `DATABASE_SCHEMA` (defaults to `team_horizon`)
 
-The repository also contains a defensive `nixpacks.toml` pinned to Node 22. Dockerfile remains the recommended build method because it gives this SQLite application a predictable build and runtime image.
+The repository also contains a defensive `nixpacks.toml` pinned to Node 22. Dockerfile remains the recommended build method for a predictable runtime image. Backups and retention belong to the PostgreSQL service; redeploying the application container does not delete database rows.
+
+If an earlier deployment already lost its SQLite file during redeployment, those deleted rows cannot be reconstructed by this migration. Re-enter the team setup once after connecting PostgreSQL; subsequent redeployments will reuse the external database.
 
 ### Nginx domain proxy
 

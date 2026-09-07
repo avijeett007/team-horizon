@@ -3,19 +3,35 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 describe("deployment configuration", () => {
-  it("pins Nixpacks to Node 22 with the native build toolchain", () => {
+  it("pins Nixpacks to Node 22 without SQLite build tooling", () => {
     const root = process.cwd();
     const packageJson = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
     const nixpacks = fs.readFileSync(path.join(root, "nixpacks.toml"), "utf8");
 
     expect(packageJson.engines.node).toMatch(/22/);
     expect(nixpacks).toContain('nodejs_22');
-    expect(nixpacks).toContain('python3');
-    expect(nixpacks).toContain('gnumake');
-    expect(nixpacks).toContain('gcc');
+    expect(nixpacks).not.toContain('python3');
+    expect(nixpacks).not.toContain('gnumake');
+    expect(nixpacks).not.toContain('gcc');
     expect(nixpacks).toContain('cp -r .next/static .next/standalone/.next/static');
     expect(nixpacks).toContain('cp -r public .next/standalone/public');
     expect(nixpacks).toContain('cmd = "node .next/standalone/server.js"');
+  });
+
+  it("documents PostgreSQL as the persistent Coolify database", () => {
+    const root = process.cwd();
+    const packageJson = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
+    const dockerfile = fs.readFileSync(path.join(root, "Dockerfile"), "utf8");
+    const envExample = fs.readFileSync(path.join(root, ".env.example"), "utf8");
+    const readme = fs.readFileSync(path.join(root, "README.md"), "utf8");
+
+    expect(packageJson.dependencies.pg).toBeTruthy();
+    expect(packageJson.dependencies["better-sqlite3"]).toBeUndefined();
+    expect(dockerfile).not.toContain("python3 make g++");
+    expect(dockerfile).not.toContain("DATABASE_PATH");
+    expect(envExample).toContain("DATABASE_URL=postgresql://");
+    expect(readme).not.toContain("mount a volume at `/app/data`");
+    expect(readme).toContain("`DATABASE_URL`");
   });
 
   it("keeps Nginx, Docker and Coolify on production port 3009", () => {
