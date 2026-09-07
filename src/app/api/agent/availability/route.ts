@@ -1,31 +1,35 @@
-import crypto from "node:crypto";
+import { DateTime } from "luxon";
 import { NextResponse } from "next/server";
+import { AgentAuthError, requireAgentToken } from "@/lib/agent-auth";
+import { requireProjectId } from "@/lib/api-policy";
 import { getDb } from "@/lib/db";
-import { listBootstrap, listEntries } from "@/lib/repository";
-
-function tokenMatches(request: Request): boolean {
-  const expected = process.env.AGENT_API_TOKEN;
-  if (!expected) return false;
-  const supplied = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ?? "";
-  const a = Buffer.from(expected);
-  const b = Buffer.from(supplied);
-  return a.length === b.length && crypto.timingSafeEqual(a, b);
-}
+import { projectAudience, scopedEntries } from "@/lib/project-scope";
+import { weeklyStatusForMember } from "@/lib/weekly-ledger";
 
 export async function GET(request: Request) {
-  if (!process.env.AGENT_API_TOKEN) return NextResponse.json({ error: "Agent access is not enabled" }, { status: 503 });
-  if (!tokenMatches(request)) return NextResponse.json({ error: "A valid agent token is required" }, { status: 401 });
-  const url = new URL(request.url);
-  const from = url.searchParams.get("from");
-  const to = url.searchParams.get("to");
-  if (!from || !to) return NextResponse.json({ error: "from and to are required ISO timestamps" }, { status: 400 });
   try {
+    requireAgentToken(request);
+    const url = new URL(request.url);
+    const projectId = requireProjectId(url.searchParams);
+    const from = url.searchParams.get("from");
+    const to = url.searchParams.get("to");
+    if (!from || !to) throw new Error("from and to are required ISO timestamps");
     const db = getDb();
-    const memberIds = url.searchParams.getAll("member").map(Number).filter(Number.isFinite);
-    const data = listBootstrap(db);
-    const entries = listEntries(db, from, to, memberIds);
-    return NextResponse.json({ generatedAt: new Date().toISOString(), range: { from, to }, ...data, entries });
+    const audience = projectAudience(db, projectId);
+    const requestedIds = url.searchParams.getAll("member").map(Number).filter(Number.isInteger);
+    const members = requestedIds.length ? audience.members.filter((member) => requestedIds.includes(member.id)) : audience.members;
+    const week = url.searchParams.get("week");
+    const generatedAt = DateTime.utc().toISO()!;
+    const weeklyStatus = members.map((member) => weeklyStatusForMember(
+      db,
+      member,
+      week ?? DateTime.now().setZone(member.timezone).toISODate()!,
+      generatedAt,
+    ));
+    const entries = scopedEntries(db, projectId, null, from, to, members.map((member) => member.id));
+    return NextResponse.json({ generatedAt, range: { from, to }, project: audience.selectedProject, venture: audience.ventures[0], members, entries, weeklyStatus });
   } catch (error) {
-    return NextResponse.json({ error: error instanceof Error ? error.message : "Invalid request" }, { status: 400 });
+    const status = error instanceof AgentAuthError ? error.status : 400;
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Invalid request" }, { status });
   }
 }
